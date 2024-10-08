@@ -14,7 +14,28 @@ export default async (ctx: ContentScriptContext) => {
     append: "first",
     onMount(uiContainer, shadow) {
       const style = document.createElement("style");
-      style.textContent = stylesText.replaceAll(":root", ":host");
+      style.textContent = stylesText.replaceAll(":root", ":host") + `
+        .editable-code {
+          position: relative;
+        }
+        .editable-code textarea {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          resize: none;
+          background: transparent;
+          color: transparent;
+          caret-color: white;
+          font-family: monospace;
+          font-size: inherit;
+          line-height: inherit;
+          padding: inherit;
+          border: none;
+          outline: none;
+        }
+      `;
       shadow.querySelector("head")!.append(style);
 
       const isLocalFile = window.location.protocol === 'file:';
@@ -25,28 +46,33 @@ export default async (ctx: ContentScriptContext) => {
         setupDragAndDrop(uiContainer);
       }
 
-      // Function to highlight code
-      async function highlightCode(code: string, fileName: string) {
-        const language = getLanguageFromFileName(fileName);
-        console.log(`Highlighting code in ${language} file: ${fileName}`);
-        const html = await codeToHtml(code, {
-          lang: language,
-          theme: 'github-dark-dimmed',
+      // Function to create editable highlighted code
+      async function createEditableHighlightedCode(code: string, language: string) {
+        const highlightedHtml = await codeToHtml(code, { lang: language, theme: 'github-dark-dimmed' });
+        const container = document.createElement('div');
+        container.className = 'editable-code';
+        container.innerHTML = highlightedHtml;
+
+        const textarea = document.createElement('textarea');
+        textarea.value = code;
+        textarea.spellcheck = false;
+        container.appendChild(textarea);
+
+        textarea.addEventListener('input', async () => {
+          const updatedHtml = await codeToHtml(textarea.value, { lang: language, theme: 'github-dark-dimmed' });
+          container.querySelector('pre')!.innerHTML = updatedHtml;
         });
-        const codeElement = document.createElement("div");
-        codeElement.innerHTML = html;
-        return codeElement;
+
+        return container;
       }
 
       // Function to set background color based on highlighted code
       function setDynamicBackground(codeElement: HTMLElement) {
-        // Find the first pre element with a background-color
         const preElement = codeElement.querySelector('pre');
         if (preElement) {
           const bgColor = window.getComputedStyle(preElement).backgroundColor;
           document.body.style.backgroundColor = bgColor;
 
-          // Create a style element for additional styling
           const styleElement = document.createElement('style');
           styleElement.textContent = `
             body {
@@ -68,14 +94,10 @@ export default async (ctx: ContentScriptContext) => {
         const languageMap: { [key: string]: string } = {
           'js': 'javascript',
           'ts': 'typescript',
-          'json': 'json',
           'py': 'python',
           'html': 'html',
           'css': 'css',
           'php': 'php',
-          'md': 'markdown',
-          'yaml': 'yaml',
-          'yml': 'yaml',
         };
         return languageMap[extension || ''] || 'text';
       }
@@ -84,16 +106,13 @@ export default async (ctx: ContentScriptContext) => {
       async function highlightLocalFile(container: HTMLElement) {
         const content = document.body.innerText || document.body.textContent || '';
         const fileName = window.location.pathname.split('/').pop() || 'unknown.txt';
-        const highlightedCode = await highlightCode(content, fileName);
+        const language = getLanguageFromFileName(fileName);
+        const editableCode = await createEditableHighlightedCode(content, language);
 
-        // Clear the original content and append the highlighted code
         document.body.innerHTML = '';
-        document.body.appendChild(highlightedCode);
+        document.body.appendChild(editableCode);
 
-        // Set dynamic background
-        setDynamicBackground(highlightedCode);
-
-        // Ensure the highlighted code is visible
+        setDynamicBackground(editableCode);
         document.body.style.display = 'block';
       }
 
@@ -124,10 +143,11 @@ export default async (ctx: ContentScriptContext) => {
             const reader = new FileReader();
             reader.onload = async (event) => {
               const content = event.target?.result as string;
-              const highlightedCode = await highlightCode(content, file.name);
-              container.innerHTML = ''; // Clear previous content
-              container.appendChild(highlightedCode);
-              setDynamicBackground(highlightedCode);
+              const language = getLanguageFromFileName(file.name);
+              const editableCode = await createEditableHighlightedCode(content, language);
+              container.innerHTML = '';
+              container.appendChild(editableCode);
+              setDynamicBackground(editableCode);
             };
             reader.readAsText(file);
           }
@@ -135,9 +155,9 @@ export default async (ctx: ContentScriptContext) => {
 
         // Initial code highlight example
         const initialCode = 'console.log("Hello world!");';
-        highlightCode(initialCode, 'example.js').then(highlightedCode => {
-          container.appendChild(highlightedCode);
-          setDynamicBackground(highlightedCode);
+        createEditableHighlightedCode(initialCode, 'javascript').then(editableCode => {
+          container.appendChild(editableCode);
+          setDynamicBackground(editableCode);
         });
       }
     },
