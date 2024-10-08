@@ -31,11 +31,35 @@ export default async (ctx: ContentScriptContext) => {
         console.log(`Highlighting code in ${language} file: ${fileName}`);
         const html = await codeToHtml(code, {
           lang: language,
-          theme: 'github-dark',
+          theme: 'github-dark-dimmed',
         });
         const codeElement = document.createElement("div");
         codeElement.innerHTML = html;
         return codeElement;
+      }
+
+      // Function to set background color based on highlighted code
+      function setDynamicBackground(codeElement: HTMLElement) {
+        // Find the first pre element with a background-color
+        const preElement = codeElement.querySelector('pre');
+        if (preElement) {
+          const bgColor = window.getComputedStyle(preElement).backgroundColor;
+          document.body.style.backgroundColor = bgColor;
+
+          // Create a style element for additional styling
+          const styleElement = document.createElement('style');
+          styleElement.textContent = `
+            body {
+              margin: 0;
+              padding: 20px;
+              min-height: 100vh;
+            }
+            .shiki {
+              background-color: transparent !important;
+            }
+          `;
+          document.head.appendChild(styleElement);
+        }
       }
 
       // Function to guess language from file extension
@@ -44,10 +68,14 @@ export default async (ctx: ContentScriptContext) => {
         const languageMap: { [key: string]: string } = {
           'js': 'javascript',
           'ts': 'typescript',
+          'json': 'json',
           'py': 'python',
           'html': 'html',
           'css': 'css',
           'php': 'php',
+          'md': 'markdown',
+          'yaml': 'yaml',
+          'yml': 'yaml',
         };
         return languageMap[extension || ''] || 'text';
       }
@@ -61,6 +89,9 @@ export default async (ctx: ContentScriptContext) => {
         // Clear the original content and append the highlighted code
         document.body.innerHTML = '';
         document.body.appendChild(highlightedCode);
+
+        // Set dynamic background
+        setDynamicBackground(highlightedCode);
 
         // Ensure the highlighted code is visible
         document.body.style.display = 'block';
@@ -94,7 +125,9 @@ export default async (ctx: ContentScriptContext) => {
             reader.onload = async (event) => {
               const content = event.target?.result as string;
               const highlightedCode = await highlightCode(content, file.name);
+              container.innerHTML = ''; // Clear previous content
               container.appendChild(highlightedCode);
+              setDynamicBackground(highlightedCode);
             };
             reader.readAsText(file);
           }
@@ -104,6 +137,7 @@ export default async (ctx: ContentScriptContext) => {
         const initialCode = 'console.log("Hello world!");';
         highlightCode(initialCode, 'example.js').then(highlightedCode => {
           container.appendChild(highlightedCode);
+          setDynamicBackground(highlightedCode);
         });
       }
     },
