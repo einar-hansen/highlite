@@ -8,6 +8,7 @@ export default async (ctx: ContentScriptContext) => {
     browser.runtime.getURL("/content-scripts/esm/style.css"),
   ).then((res) => res.text());
 
+
   const ui = await createShadowRootUi(ctx, {
     name: "esm-ui-example",
     position: "inline",
@@ -15,80 +16,124 @@ export default async (ctx: ContentScriptContext) => {
     onMount(uiContainer, shadow) {
       const style = document.createElement("style");
       style.textContent = stylesText.replaceAll(":root", ":host") + `
-        .editable-code {
-          position: relative;
+        .container {
+          display: flex;
+          height: 100vh;
+          width: 100vw;
         }
-        .editable-code textarea {
-          position: absolute;
-          top: 0;
-          left: 0;
+        .view-pane, .edit-pane {
+          flex: 1;
+          overflow: auto;
+        }
+        .edit-pane {
+          display: none;
+        }
+        .edit-pane textarea {
           width: 100%;
           height: 100%;
           resize: none;
-          background: transparent;
-          color: transparent;
-          caret-color: white;
+          background: #1e1e1e;
+          color: #d4d4d4;
           font-family: monospace;
-          font-size: inherit;
-          line-height: inherit;
-          padding: inherit;
+          font-size: 14px;
           border: none;
           outline: none;
+          padding: 10px;
+        }
+        .controls {
+          position: fixed;
+          top: 10px;
+          right: 10px;
+          z-index: 1000;
+        }
+        button {
+          margin-left: 5px;
         }
       `;
       shadow.querySelector("head")!.append(style);
 
+      const container = document.createElement('div');
+      container.className = 'container';
+      const viewPane = document.createElement('div');
+      viewPane.className = 'view-pane';
+      const editPane = document.createElement('div');
+      editPane.className = 'edit-pane';
+      container.appendChild(viewPane);
+      container.appendChild(editPane);
+      uiContainer.appendChild(container);
+
+      const controls = document.createElement('div');
+      controls.className = 'controls';
+      const editButton = document.createElement('button');
+      editButton.textContent = 'Edit Code';
+      const splitButton = document.createElement('button');
+      splitButton.textContent = 'Toggle Split';
+      controls.appendChild(editButton);
+      controls.appendChild(splitButton);
+      uiContainer.appendChild(controls);
+
+      let isEditing = false;
+      let isVerticalSplit = true;
+
+      editButton.addEventListener('click', () => {
+        isEditing = !isEditing;
+        editPane.style.display = isEditing ? 'block' : 'none';
+        editButton.textContent = isEditing ? 'View Code' : 'Edit Code';
+        updateSplitLayout();
+      });
+
+      splitButton.addEventListener('click', () => {
+        isVerticalSplit = !isVerticalSplit;
+        updateSplitLayout();
+      });
+
+      function updateSplitLayout() {
+        if (isEditing) {
+          container.style.flexDirection = isVerticalSplit ? 'row' : 'column';
+        } else {
+          container.style.flexDirection = 'row';
+          viewPane.style.flex = '1';
+          editPane.style.flex = '0';
+        }
+      }
+
       const isLocalFile = window.location.protocol === 'file:';
       console.log(`Is local file: ${isLocalFile}`);
       if (isLocalFile) {
-        highlightLocalFile(uiContainer);
+        highlightLocalFile(viewPane, editPane);
       } else {
-        setupDragAndDrop(uiContainer);
+        setupDragAndDrop(viewPane, editPane);
       }
 
-      // Function to create editable highlighted code
-      async function createEditableHighlightedCode(code: string, language: string) {
+      async function createHighlightedCode(code: string, language: string) {
         const highlightedHtml = await codeToHtml(code, { lang: language, theme: 'github-dark-dimmed' });
-        const container = document.createElement('div');
-        container.className = 'editable-code';
-        container.innerHTML = highlightedHtml;
+        const codeElement = document.createElement('div');
+        codeElement.innerHTML = highlightedHtml;
+        return codeElement;
+      }
 
+      function createEditableArea(code: string, language: string, viewPane: HTMLElement) {
         const textarea = document.createElement('textarea');
         textarea.value = code;
         textarea.spellcheck = false;
-        container.appendChild(textarea);
 
         textarea.addEventListener('input', async () => {
           const updatedHtml = await codeToHtml(textarea.value, { lang: language, theme: 'github-dark-dimmed' });
-          container.querySelector('pre')!.innerHTML = updatedHtml;
+          viewPane.innerHTML = updatedHtml;
         });
 
-        return container;
+        return textarea;
       }
 
-      // Function to set background color based on highlighted code
       function setDynamicBackground(codeElement: HTMLElement) {
         const preElement = codeElement.querySelector('pre');
         if (preElement) {
           const bgColor = window.getComputedStyle(preElement).backgroundColor;
           document.body.style.backgroundColor = bgColor;
-
-          const styleElement = document.createElement('style');
-          styleElement.textContent = `
-            body {
-              margin: 0;
-              padding: 20px;
-              min-height: 100vh;
-            }
-            .shiki {
-              background-color: transparent !important;
-            }
-          `;
-          document.head.appendChild(styleElement);
+          editPane.style.backgroundColor = bgColor;
         }
       }
 
-      // Function to guess language from file extension
       function getLanguageFromFileName(fileName: string): string {
         const extension = fileName.split('.').pop()?.toLowerCase();
         const languageMap: { [key: string]: string } = {
@@ -102,29 +147,30 @@ export default async (ctx: ContentScriptContext) => {
         return languageMap[extension || ''] || 'text';
       }
 
-      // Function to highlight local file
-      async function highlightLocalFile(container: HTMLElement) {
+      async function highlightLocalFile(viewPane: HTMLElement, editPane: HTMLElement) {
         const content = document.body.innerText || document.body.textContent || '';
         const fileName = window.location.pathname.split('/').pop() || 'unknown.txt';
         const language = getLanguageFromFileName(fileName);
-        const editableCode = await createEditableHighlightedCode(content, language);
+        const highlightedCode = await createHighlightedCode(content, language);
+        const editableArea = createEditableArea(content, language, viewPane);
 
-        document.body.innerHTML = '';
-        document.body.appendChild(editableCode);
+        viewPane.innerHTML = '';
+        viewPane.appendChild(highlightedCode);
+        editPane.innerHTML = '';
+        editPane.appendChild(editableArea);
 
-        setDynamicBackground(editableCode);
+        setDynamicBackground(highlightedCode);
         document.body.style.display = 'block';
       }
 
-      // Function to setup drag and drop
-      function setupDragAndDrop(container: HTMLElement) {
+      function setupDragAndDrop(viewPane: HTMLElement, editPane: HTMLElement) {
         const dropZone = document.createElement("div");
         dropZone.id = "drop-zone";
         dropZone.textContent = "Drag and drop files here";
         dropZone.style.border = "2px dashed #ccc";
         dropZone.style.padding = "20px";
         dropZone.style.marginTop = "20px";
-        container.appendChild(dropZone);
+        viewPane.appendChild(dropZone);
 
         dropZone.addEventListener("dragover", (e) => {
           e.preventDefault();
@@ -144,10 +190,15 @@ export default async (ctx: ContentScriptContext) => {
             reader.onload = async (event) => {
               const content = event.target?.result as string;
               const language = getLanguageFromFileName(file.name);
-              const editableCode = await createEditableHighlightedCode(content, language);
-              container.innerHTML = '';
-              container.appendChild(editableCode);
-              setDynamicBackground(editableCode);
+              const highlightedCode = await createHighlightedCode(content, language);
+              const editableArea = createEditableArea(content, language, viewPane);
+
+              viewPane.innerHTML = '';
+              viewPane.appendChild(highlightedCode);
+              editPane.innerHTML = '';
+              editPane.appendChild(editableArea);
+
+              setDynamicBackground(highlightedCode);
             };
             reader.readAsText(file);
           }
@@ -155,9 +206,13 @@ export default async (ctx: ContentScriptContext) => {
 
         // Initial code highlight example
         const initialCode = 'console.log("Hello world!");';
-        createEditableHighlightedCode(initialCode, 'javascript').then(editableCode => {
-          container.appendChild(editableCode);
-          setDynamicBackground(editableCode);
+        createHighlightedCode(initialCode, 'javascript').then(highlightedCode => {
+          viewPane.innerHTML = '';
+          viewPane.appendChild(highlightedCode);
+          const editableArea = createEditableArea(initialCode, 'javascript', viewPane);
+          editPane.innerHTML = '';
+          editPane.appendChild(editableArea);
+          setDynamicBackground(highlightedCode);
         });
       }
     },
