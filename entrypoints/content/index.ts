@@ -1,5 +1,5 @@
 export default defineContentScript({
-  matches: ["*://*/*"],
+  matches: ['<all_urls>', 'file://*/*'],
   async main(ctx) {
     /* @vite-ignore */
     const mod = await import(
