@@ -8,50 +8,16 @@ export default async (ctx: ContentScriptContext) => {
     browser.runtime.getURL("/content-scripts/esm/style.css"),
   ).then((res) => res.text());
 
-
   const ui = await createShadowRootUi(ctx, {
     name: "esm-ui-example",
     position: "inline",
     append: "first",
     onMount(uiContainer, shadow) {
       const style = document.createElement("style");
-      style.textContent = stylesText.replaceAll(":root", ":host") + `
-        .container {
-          display: flex;
-          height: 100vh;
-          width: 100vw;
-        }
-        .view-pane, .edit-pane {
-          flex: 1;
-          overflow: auto;
-        }
-        .edit-pane {
-          display: none;
-        }
-        .edit-pane textarea {
-          width: 100%;
-          height: 100%;
-          resize: none;
-          background: #1e1e1e;
-          color: #d4d4d4;
-          font-family: monospace;
-          font-size: 14px;
-          border: none;
-          outline: none;
-          padding: 10px;
-        }
-        .controls {
-          position: fixed;
-          top: 10px;
-          right: 10px;
-          z-index: 1000;
-        }
-        button {
-          margin-left: 5px;
-        }
-      `;
+      style.textContent = stylesText.replaceAll(":root", ":host");
       shadow.querySelector("head")!.append(style);
 
+      // Rest of the code remains the same
       const container = document.createElement('div');
       container.className = 'container';
       const viewPane = document.createElement('div');

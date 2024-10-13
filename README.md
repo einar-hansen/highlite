@@ -21,3 +21,13 @@ Edit options:
 Prettify options:
 - Wrap code in a code block 
 - Over a background image
+
+
+Laravel package:
+- Format code in the browser
+
+API: 
+- Format code from API requests
+
+Online:
+- Format code from online sources
